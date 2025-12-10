@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/step_service.dart';
 import '../widgets/sensor_status_card.dart';
 import '../widgets/progress_circle.dart';
+import 'history_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -121,7 +122,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 50),
                   OutlinedButton.icon(
-                    onPressed: () {}, // Fitur History nanti
+                    onPressed: () {
+                        Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const HistoryScreen()),
+                      );
+                    },
                     icon: const Icon(Icons.history),
                     label: const Text("Lihat Riwayat"),
                   )
