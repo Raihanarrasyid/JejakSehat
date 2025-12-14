@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
 import '../services/step_service.dart';
 import '../widgets/sensor_status_card.dart';
 import '../widgets/progress_circle.dart';
-import 'history_screen.dart';
+import 'history_screen.dart'; 
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final AuthService authService; // Menerima data User
+
+  const HomeScreen({super.key, required this.authService});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  // Service langkah tetap dipanggil di sini
   final StepService _stepService = StepService();
 
   @override
@@ -19,7 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _stepService.init();
     
-    // Listener khusus untuk memunculkan Dialog Selamat
+    // Listener Notifikasi Selamat
     _stepService.addListener(() {
       if (_stepService.todaySteps >= _stepService.targetSteps && 
           !_stepService.hasShownCongratulation && 
@@ -36,6 +40,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // --- LOGIC UI DIALOG ---
   void _showEditTargetDialog() {
     TextEditingController controller = TextEditingController(text: _stepService.targetSteps.toString());
     showDialog(
@@ -91,16 +96,34 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ListenableBuilder akan me-rebuild UI setiap kali notifyListeners() dipanggil di Service
+    // Kita mendengarkan perubahan data LANGKAH (_stepService)
     return ListenableBuilder(
       listenable: _stepService,
       builder: (context, child) {
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Jejak Sehat'),
+            // Bagian ini mengambil data NAMA dari widget.authService
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Jejak Sehat', style: TextStyle(fontSize: 14)),
+                Text(
+                  'Hi, ${widget.authService.userName}', 
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)
+                ),
+              ],
+            ),
             backgroundColor: _stepService.isUsingHardwareSensor ? Colors.teal : Colors.orange,
             actions: [
-              IconButton(icon: const Icon(Icons.cloud_upload), onPressed: _handleSync)
+              // Tombol Sync Manual
+              IconButton(icon: const Icon(Icons.cloud_upload), onPressed: _handleSync),
+              // Tombol Logout
+              IconButton(
+                icon: const Icon(Icons.logout),
+                onPressed: () {
+                  widget.authService.logout();
+                },
+              )
             ],
           ),
           body: Center(
@@ -121,12 +144,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     onEditTarget: _showEditTargetDialog,
                   ),
                   const SizedBox(height: 50),
+                  // Tombol History
                   OutlinedButton.icon(
                     onPressed: () {
-                        Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const HistoryScreen()),
-                      );
+                      // Navigator.push(context, MaterialPageRoute(builder: (_) => const HistoryScreen()));
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Fitur History")));
                     },
                     icon: const Icon(Icons.history),
                     label: const Text("Lihat Riwayat"),

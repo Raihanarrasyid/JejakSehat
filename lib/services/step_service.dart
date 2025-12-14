@@ -6,8 +6,8 @@ import 'package:sensors_plus/sensors_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
-import 'database_helper.dart';
-import 'api_service.dart';
+import '../services/database_helper.dart';
+import '../services/api_service.dart'; 
 
 class StepService extends ChangeNotifier {
   // --- STATE VARIABLES ---
@@ -136,13 +136,19 @@ class StepService extends ChangeNotifier {
 
   void _checkDailyReset(String todayDate) async {
     if (_lastSavedDate != todayDate) {
-      // Sync Data Kemarin
+      // 1. Ambil Data Kemarin
       int yesterdaySteps = await _getYesterdayStepsFromDB(_lastSavedDate);
-      if (yesterdaySteps > 0) {
-        ApiService.syncDailySteps(_lastSavedDate, yesterdaySteps);
+      
+      // 2. Ambil Token Auth
+      String? token = _prefs.getString('accessToken');
+
+      // 3. Sync ke API (Hanya jika ada Token & Langkah > 0)
+      if (yesterdaySteps > 0 && token != null) {
+        // Mengirim 3 parameter: Token, Langkah, Tanggal
+        ApiService.syncDailySteps(token, yesterdaySteps, _lastSavedDate);
       }
 
-      // Reset
+      // 4. Reset Variabel
       _todaySteps = 0;
       _stepsOffset = 0;
       _lastSavedDate = todayDate;
@@ -155,6 +161,21 @@ class StepService extends ChangeNotifier {
       await _prefs.setBool('need_new_offset', true);
       
       notifyListeners();
+    }
+  }
+
+  Future<bool> forceSync() async {
+    String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    
+    // Ambil Token Auth
+    String? token = _prefs.getString('accessToken');
+
+    if (token != null) {
+      // Mengirim 3 parameter: Token, Langkah, Tanggal
+      return await ApiService.syncDailySteps(token, _todaySteps, today);
+    } else {
+      print("Sync Gagal: User belum login (Token null)");
+      return false;
     }
   }
 
@@ -171,11 +192,6 @@ class StepService extends ChangeNotifier {
     String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     _prefs.setBool('congrats_shown_$today', true);
     notifyListeners(); // Optional
-  }
-
-  Future<bool> forceSync() async {
-    String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    return await ApiService.syncDailySteps(today, _todaySteps);
   }
 
   Future<int> _getYesterdayStepsFromDB(String date) async {

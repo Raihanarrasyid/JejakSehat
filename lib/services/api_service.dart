@@ -1,28 +1,84 @@
 import 'dart:convert';
-import 'dart:async';
+import 'package:http/http.dart' as http;
 
 class ApiService {
-  // Simulasi URL Backend
-  static const String _baseUrl = 'https://api.jejaksehat-dummy.com/v1';
+  static const String baseUrl = 'https://api-jejaksehat.alifjian.my.id';
 
-  static Future<bool> syncDailySteps(String date, int steps) async {
-    // Simulasi delay jaringan
+  static Future<Map<String, dynamic>> login(String email, String password) async {
+    final url = Uri.parse('$baseUrl/auth/login');
+    
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'accept': '*/*',
+          'Content-Type': 'application/json'
+        },
+        body: jsonEncode({
+          'email': email,
+          'password': password
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return data; 
+      } else {
+        throw Exception(data['message'] ?? 'Login Gagal (Cek Email/Password)');
+      }
+    } catch (e) {
+      throw Exception('Login Error: $e');
+    }
+  }
+
+  static Future<Map<String, dynamic>> register(String name, String email, String password) async {
+    final url = Uri.parse('$baseUrl/auth/register');
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'accept': '*/*',
+          'Content-Type': 'application/json'
+        },
+        body: jsonEncode({
+          "name": name,
+          "email": email,
+          "password": password,
+          "savedOffset": 0,
+          "step": 0
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return data;
+      } else {
+        throw Exception(data['message'] ?? 'Registrasi Gagal');
+      }
+    } catch (e) {
+      throw Exception('Register Error: $e');
+    }
+  }
+
+  static Future<bool> syncDailySteps(String token, int steps, String date) async {
     await Future.delayed(const Duration(seconds: 2));
 
     final Map<String, dynamic> payload = {
-      "user_id": "user_12345", // Didapat dari login session
+      "user_id": "user_12345",
       "date": date,
       "total_steps": steps,
       "device_info": "Android/Sensor",
-      "client_timestamp": DateTime.now().toIso8601String(), // Waktu di HP User
-      // "signature": "sha256_hash_here" // (Opsional) Untuk keamanan data
+      "client_timestamp": DateTime.now().toIso8601String(),
     };
 
     try {
       print("[API] Mengirim Data ke Backend...");
       print("Payload: ${jsonEncode(payload)}");
       
-      DateTime serverTime = DateTime.now(); // Anggap ini waktu server
+      DateTime serverTime = DateTime.now();
       DateTime clientDate = DateTime.parse(date);
 
       if (clientDate.isAfter(serverTime)) {
@@ -36,6 +92,6 @@ class ApiService {
     } catch (e) {
       print("[API] Gagal: $e");
       return false;
-    }
+    } 
   }
 }
