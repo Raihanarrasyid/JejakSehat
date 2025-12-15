@@ -7,10 +7,9 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import '../services/database_helper.dart';
-import '../services/api_service.dart'; 
+import '../services/api_service.dart';
 
 class StepService extends ChangeNotifier {
-  // --- STATE VARIABLES ---
   int _todaySteps = 0;
   int _targetSteps = 10000;
   double _percent = 0.0;
@@ -18,7 +17,6 @@ class StepService extends ChangeNotifier {
   bool _isUsingHardwareSensor = true;
   bool _hasShownCongratulation = false;
 
-  // Getters untuk UI
   int get todaySteps => _todaySteps;
   int get targetSteps => _targetSteps;
   double get percent => _percent;
@@ -26,18 +24,15 @@ class StepService extends ChangeNotifier {
   bool get isUsingHardwareSensor => _isUsingHardwareSensor;
   bool get hasShownCongratulation => _hasShownCongratulation;
 
-  // Internal Logic
   Stream<StepCount>? _stepCountStream;
   StreamSubscription<UserAccelerometerEvent>? _accelSubscription;
   late SharedPreferences _prefs;
-  int _stepsOffset = 0;
+  int _stepsOffset = -1;
   String _lastSavedDate = "";
-  
-  // Accelerometer Logic
+
   double _previousMagnitude = 0;
   final double _threshold = 12.0;
 
-  // --- INITIALIZATION ---
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
     await _loadLocalData();
@@ -46,11 +41,18 @@ class StepService extends ChangeNotifier {
 
   Future<void> _loadLocalData() async {
     _targetSteps = _prefs.getInt('daily_target') ?? 10000;
-    
+
     String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     _lastSavedDate = _prefs.getString('last_date') ?? today;
-    _stepsOffset = _prefs.getInt('steps_offset') ?? 0;
-    _hasShownCongratulation = _prefs.getBool('congrats_shown_$today') ?? false;
+
+    if (_prefs.containsKey('steps_offset')) {
+      _stepsOffset = _prefs.getInt('steps_offset') ?? 0;
+    } else {
+      _stepsOffset = -1;
+    }
+
+    _hasShownCongratulation =
+        _prefs.getBool('congrats_shown_$today') ?? false;
 
     _checkDailyReset(today);
   }
@@ -64,7 +66,6 @@ class StepService extends ChangeNotifier {
     }
   }
 
-  // --- SENSOR LOGIC ---
   void _initHardwarePedometer() {
     try {
       _stepCountStream = Pedometer.stepCountStream;
@@ -79,8 +80,7 @@ class StepService extends ChangeNotifier {
   void _useAccelerometerFallback() {
     _isUsingHardwareSensor = false;
     _sensorStatus = 'Mode Accelerometer (Manual)';
-    
-    // Load langkah manual terakhir
+
     _todaySteps = _prefs.getInt('manual_steps_today') ?? 0;
     _updateProgress();
     notifyListeners();
@@ -94,8 +94,18 @@ class StepService extends ChangeNotifier {
     String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     if (today != _lastSavedDate) _checkDailyReset(today);
 
+    if (_stepsOffset == -1) {
+      _stepsOffset = event.steps;
+      _prefs.setInt('steps_offset', _stepsOffset);
+    }
+
+    if (event.steps < _stepsOffset) {
+      _stepsOffset = 0;
+      _prefs.setInt('steps_offset', 0);
+    }
+
     bool needNewOffset = _prefs.getBool('need_new_offset') ?? false;
-    if (needNewOffset || event.steps < _stepsOffset) {
+    if (needNewOffset) {
       _stepsOffset = event.steps;
       _prefs.setInt('steps_offset', _stepsOffset);
       _prefs.setBool('need_new_offset', false);
@@ -103,10 +113,17 @@ class StepService extends ChangeNotifier {
 
     _isUsingHardwareSensor = true;
     _sensorStatus = 'Mode Sensor Bawaan';
-    
+
     int calculatedSteps = event.steps - _stepsOffset;
-    _todaySteps = calculatedSteps < 0 ? 0 : calculatedSteps;
-    
+
+    if (calculatedSteps < 0) {
+      _stepsOffset = event.steps;
+      _prefs.setInt('steps_offset', _stepsOffset);
+      calculatedSteps = 0;
+    }
+
+    _todaySteps = calculatedSteps;
+
     _updateProgress();
     _saveLocalData(today);
     notifyListeners();
@@ -116,7 +133,8 @@ class StepService extends ChangeNotifier {
     String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     if (today != _lastSavedDate) _checkDailyReset(today);
 
-    double magnitude = sqrt(pow(event.x, 2) + pow(event.y, 2) + pow(event.z, 2));
+    double magnitude =
+        sqrt(pow(event.x, 2) + pow(event.y, 2) + pow(event.z, 2));
 
     if (magnitude > _threshold && _previousMagnitude <= _threshold) {
       _todaySteps++;
@@ -128,7 +146,6 @@ class StepService extends ChangeNotifier {
     _previousMagnitude = magnitude;
   }
 
-  // --- HELPER LOGIC ---
   void _updateProgress() {
     _percent = (_todaySteps / _targetSteps);
     if (_percent > 1.0) _percent = 1.0;
@@ -136,19 +153,15 @@ class StepService extends ChangeNotifier {
 
   void _checkDailyReset(String todayDate) async {
     if (_lastSavedDate != todayDate) {
-      // 1. Ambil Data Kemarin
-      int yesterdaySteps = await _getYesterdayStepsFromDB(_lastSavedDate);
-      
-      // 2. Ambil Token Auth
+      int yesterdaySteps =
+          await _getYesterdayStepsFromDB(_lastSavedDate);
       String? token = _prefs.getString('accessToken');
 
-      // 3. Sync ke API (Hanya jika ada Token & Langkah > 0)
       if (yesterdaySteps > 0 && token != null) {
-        // Mengirim 3 parameter: Token, Langkah, Tanggal
-        ApiService.syncDailySteps(token, yesterdaySteps, _lastSavedDate);
+        ApiService.syncDailySteps(
+            token, yesterdaySteps, _lastSavedDate);
       }
 
-      // 4. Reset Variabel
       _todaySteps = 0;
       _stepsOffset = 0;
       _lastSavedDate = todayDate;
@@ -159,29 +172,26 @@ class StepService extends ChangeNotifier {
       await _prefs.setBool('congrats_shown_$todayDate', false);
       await _prefs.setInt('manual_steps_today', 0);
       await _prefs.setBool('need_new_offset', true);
-      
+
       notifyListeners();
     }
   }
 
   Future<bool> forceSync() async {
     String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    
-    // Ambil Token Auth
     String? token = _prefs.getString('accessToken');
 
     if (token != null) {
-      // Mengirim 3 parameter: Token, Langkah, Tanggal
-      return await ApiService.syncDailySteps(token, _todaySteps, today);
+      return await ApiService.syncDailySteps(
+          token, _todaySteps, today);
     } else {
-      print("Sync Gagal: User belum login (Token null)");
       return false;
     }
   }
 
   Future<void> setTarget(int newTarget) async {
     _targetSteps = newTarget;
-    _hasShownCongratulation = false; // Reset notifikasi
+    _hasShownCongratulation = false;
     _updateProgress();
     await _prefs.setInt('daily_target', newTarget);
     notifyListeners();
@@ -191,7 +201,7 @@ class StepService extends ChangeNotifier {
     _hasShownCongratulation = true;
     String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     _prefs.setBool('congrats_shown_$today', true);
-    notifyListeners(); // Optional
+    notifyListeners();
   }
 
   Future<int> _getYesterdayStepsFromDB(String date) async {
@@ -201,7 +211,7 @@ class StepService extends ChangeNotifier {
     }
     return 0;
   }
-  
+
   void _saveLocalData(String date) {
     DatabaseHelper.instance.insertOrUpdateStep(date, _todaySteps);
   }
